@@ -1,2 +1,1 @@
-# report-template
-Fork latex gost2007 template for me
+# НИР Исследование WIFI-чипа CC3100
