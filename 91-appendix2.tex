@@ -1,12 +1,155 @@
-\chapter{Еще картинки}
+\chapter{Исходный код программ}
 \label{cha:appendix2}
 
-\begin{figure}
-\centering
-\caption{Еще одна картинка, ничем не лучше предыдущей. Но надо же как-то заполнить место.}
-\end{figure}
 
-%%% Local Variables: 
+
+\section{Тестирование пропускной способности}
+
+\begin{verbatim}
+#!/usr/bin/env python
+import argparse
+import socket
+import sys
+import time
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', '--filename', type=str, required=True)
+    return parser.parse_args()
+
+
+def start_server():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(('0.0.0.0', 8080))
+    server.listen()
+    print('[server] start listening', file=sys.stderr)
+    (client, address) = server.accept()  # : :type client: socket.socket
+    print('[server][%s:%d] get connectinon.' % address, file=sys.stderr)
+    start = time.time()
+
+    data = []
+    recived_bytes = 0
+    while True:
+        part = client.recv(4096)
+        if part == b'':
+            break
+        recived_bytes += len(part)
+        data.append(part)
+
+    end = time.time()
+    client.close()
+    print('[server][%s:%d] close connection. Recievd %f Mb; Time: %f' % (
+        address[0], address[1], recived_bytes / (1024 * 1024), end - start),
+        file=sys.stderr)
+
+    return (data, recived_bytes / (1024 * 1024), end - start)
+
+
+def check_data(data, src_filename):
+    with open(src_filename, mode='rb') as file:
+        for part in data:
+            origin_part = file.read(len(part))
+            if part != origin_part:
+                print('[server][ERROR] Data check is faild.', file=sys.stderr)
+                sys.exit(status=-1)
+    print('[server] Data check is passed.', file=sys.stderr)
+
+
+def main():
+    args = parse_args()
+    (data, size, recv_time) = start_server()
+    check_data(data, args.filename)
+    print(size, recv_time)
+
+
+if __name__ == '__main__':
+    main()
+\end{verbatim}
+
+
+\begin{verbatim}
+#include "header.h"
+
+
+void setUP_and_check() {
+        int32_t retVal = configureSimpleLinkToDefaultState(defaultDevName());
+        if(retVal < 0) {
+                DEBUG("Failed to configure in default state; Error: %ld", retVal);
+                exit(-1);
+        }
+        DEBUG("Device is configured in default state");
+
+        retVal = sl_Start(0, defaultDevName(), 0);
+        if (retVal < 0 || ROLE_STA != retVal) {
+                DEBUG("Failed to start the device; Error: %ld", retVal);
+                exit(-1);
+        }
+        DEBUG("Device started as STATION");
+
+        retVal = connectToAP("labi2", SL_SEC_TYPE_WPA_WPA2, "labi2_wpa");
+        if(retVal < 0) {
+                DEBUG("Failed to establish connection with AP; Error: %ld", retVal);
+                exit(-1);
+        }
+        DEBUG("Connection established with AP and IP is acquired");
+
+        DEBUG("Checking LAN connection - pinging Gateway...!");
+        retVal = pingTargetHost(g_GatewayIP);
+        if(retVal < 0) {
+                DEBUG("Device couldn't connect to LAN; Error: %ld", retVal);
+                exit(-1);
+        }
+        DEBUG("Device successfully connected");
+}
+
+
+int main(int argscount, char *args[])
+{
+        if(argscount < 3) {
+                fprintf(stderr, 'not enough arguments\n');
+                exit(-1);
+        }
+
+        setUP_and_check();
+
+        uint64_t len = (uint64_t)atoi(args[1]);
+        const char * filename = args[2];
+        DEBUG("Read file: %s, filesize: %d", filename, len);
+        FILE* f = fopen(filename, "rb");
+        void* data = malloc(len);
+        fread(data, 1, len, f);
+        close(f);
+        DEBUG("data has been read");
+
+        int32_t sockId = sl_Socket(SL_AF_INET, SL_SOCK_STREAM, SL_IPPROTO_TCP);
+        assert(sockId >= 0);
+
+        SlSockAddrIn_t addr = {
+                .sin_family = SL_AF_INET,
+                .sin_port = sl_Htons(8080),
+                .sin_addr.s_addr = sl_Htonl(
+                        // 0xC0A80064 // 192.168.0.100
+                        0xC0A80067 // 192.168.0.103
+                        // 0xC0A82B48 // 192.168.43.72
+                        ),
+        };
+        int16_t status = sl_Connect(sockId, (SlSockAddr_t *) &addr, sizeof(SlSockAddrIn_t));
+        assert(status >= 0);
+        DEBUG("connected");
+
+        for(int32_t i = 0; i < len / 1024; i++) {
+                status = sl_Send(sockId, data + i * 1024, 1024, 0);
+                assert(status > 0);
+        }
+        sl_Close(sockId);
+
+        DEBUG("data sended");
+        return 0;
+}
+\end{verbatim}
+
+%%% Local Variables:
 %%% mode: latex
 %%% TeX-master: "rpz"
-%%% End: 
+%%% End:
