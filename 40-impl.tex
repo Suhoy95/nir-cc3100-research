@@ -1,82 +1,76 @@
 \chapter{Тестирование пропускной способности CC3100}
 \label{cha:impl}
 
+Последним этапом этой работы, является тестирование
+заявленной пропускной способности, которая судя по
+разделу \ref{cha:analysis} должна быть около 13 Мбит в секунду.
+
+Для этого возьмем пример из SDK, который демонстрирует
+работу CC3100 в качестве пользовательской станции и производит
+проверку наличия соединения с сетью Интернет с помощью ICMP\cite{icmp}.
+
+Подкорректировав предварительную настройку и разместив ее в
+функцию \textmd{setUP\_and\_check()}, нам остается только дописать
+работу с \textit{berkley-like} сокетом для соединения с
+тестирующим скорость TCP-сервером и передачи файла, название
+которого задается через командную строку.
+
+Сам TCP-сервер написан на интерпретируемом языке \textit{Python}
+версии 3.5. Его основная задача заключается в циклическом
+ожидании подключения устройства, получения тестовых данных
+и их сверку с эталонным файлом, чтобы убедится в том, что
+данные передались правильно и целостно. Подробнее
+исходный код приложения можно изучить в приложении \ref{cha:appendix2}.
+
+\clearpage
+Основная логика приложения, работающая с CC3100:
 
 \begin{verbatim}
 int main(int argscount, char *args[])
 {
-    if(argscount < 3) {
-        fprintf(stderr, 'not enough arguments\n');
-        exit(-1);
-    }
-
     setUP_and_check();
 
+    // считывание тестового файла
     uint64_t len = (uint64_t)atoi(args[1]);
     const char * filename = args[2];
-    DEBUG("Read file: %s, filesize: %d", filename, len);
     FILE* f = fopen(filename, "rb");
     void* data = malloc(len);
     fread(data, 1, len, f);
     close(f);
-    DEBUG("data has been read");
 
-    int32_t sockId = sl_Socket(SL_AF_INET, SL_SOCK_STREAM, SL_IPPROTO_TCP);
-    assert(sockId >= 0);
+    // создание соединения
+    int32_t sockId = sl_Socket(SL_AF_INET, SL_SOCK_STREAM,
+                                            SL_IPPROTO_TCP);
 
     SlSockAddrIn_t addr = {
             .sin_family = SL_AF_INET,
             .sin_port = sl_Htons(8080),
             .sin_addr.s_addr = sl_Htonl(
-                    // 0xC0A80064 // 192.168.0.100
                     0xC0A80067 // 192.168.0.103
-                    // 0xC0A82B48 // 192.168.43.72
                     ),
     };
-    int16_t status = sl_Connect(sockId, (SlSockAddr_t *) &addr, sizeof(SlSockAddrIn_t));
-    assert(status >= 0);
-    DEBUG("connected");
-
+    int16_t status = sl_Connect(sockId, (SlSockAddr_t *) &addr,
+                                        sizeof(SlSockAddrIn_t));
+    // передача данных на TCP сервер
     for(int32_t i = 0; i < len / 1024; i++) {
             status = sl_Send(sockId, data + i * 1024, 1024, 0);
-            assert(status > 0);
     }
     sl_Close(sockId);
-
-    DEBUG("data sended");
-    return 0;
 }
 \end{verbatim}
 
-\begin{verbatim}
-def start_server():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(('0.0.0.0', 8080))
-    server.listen()
-    print('[server] start listening', file=sys.stderr)
-    (client, address) = server.accept()  # : :type client: socket.socket
-    print('[server][%s:%d] get connectinon.' % address, file=sys.stderr)
-    start = time.time()
 
-    data = []
-    recived_bytes = 0
-    while True:
-        part = client.recv(4096)
-        if part == b'':
-            break
-        recived_bytes += len(part)
-        data.append(part)
+\myImage{Результаты тестирования пропускной способности
+в зависимости от дальности передачи данных}{bandwidth-test}{bandwidth-test}
 
-    end = time.time()
-    client.close()
-    print('[server][%s:%d] close connection. Recievd %f Mb; Time: %f' % (
-        address[0], address[1], recived_bytes / (1024 * 1024), end - start),
-        file=sys.stderr)
+Модернизировав полученный пример выводом дополнительных сведений
+о соединении, а также включив код измерения пропускной
+способности в среднем, был проведен ряд измерений для
+наблюдения пропускной способности в зависимости от расстояния.
+Полученные результаты можно увидеть на графике \ref{bandwidth-test},
+на котором можно наблюдать, что пропускная способность держится
+в диапазоне от 10 да 12 Мбит в секунду, что близко к заявленной.
 
-    return (data, recived_bytes / (1024 * 1024), end - start)
-\end{verbatim}
-
-\myImage{bandwidth-test}{bandwidth-test}{bandwidth-test}
 
 %%% Local Variables:
 %%% mode: latex
